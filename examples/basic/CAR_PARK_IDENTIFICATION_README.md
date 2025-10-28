@@ -13,11 +13,22 @@ The agent:
 ## Features
 
 - Vision-based detection using GPT-4o
-- Structured output with Pydantic models
+- **Structured Outputs** with Pydantic models for guaranteed schema adherence
 - Normalized bounding box coordinates (0-1 range)
 - Confidence scoring for each detection
 - Visual annotation with colored bounding boxes
 - Descriptive labels for each car park
+
+## How It Works
+
+This example uses OpenAI's **Structured Outputs** feature to ensure the agent returns data that exactly matches the defined schema. The agent:
+
+1. Analyzes the satellite image using vision capabilities
+2. Returns a `CarParksDetection` object with guaranteed schema adherence
+3. The response includes structured bounding boxes, confidence levels, and descriptions
+4. Python code then uses this structured data to draw annotations on the image
+
+This approach separates concerns: the agent focuses on detection using structured outputs, while Python handles the image rendering.
 
 ## Requirements
 
@@ -210,9 +221,13 @@ agent = Agent(
 
 The example demonstrates several SDK features:
 
-1. **Vision Input**: Loading and encoding local images
-2. **Structured Output**: Using Pydantic models for type-safe responses
-3. **Function Tools**: Creating custom tools for image processing
+1. **Vision Input**: Loading and encoding local images with automatic format detection
+2. **Structured Outputs**: Using Pydantic models to guarantee schema-compliant responses
+   - The agent's `output_type` parameter ensures the response matches the `CarParksDetection` schema
+   - No need for validation or retry logic - the output is guaranteed to match the schema
+3. **Separation of Concerns**:
+   - Agent handles detection and returns structured data
+   - Python code handles visualization (drawing bounding boxes)
 4. **Agent Instructions**: Guiding the model with specific detection criteria
 
 ## Related Examples

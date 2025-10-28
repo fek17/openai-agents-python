@@ -23,12 +23,11 @@ import asyncio
 import base64
 import mimetypes
 import os
-from typing import Annotated
 
 from PIL import Image, ImageDraw, ImageFont
 from pydantic import BaseModel, Field
 
-from agents import Agent, Runner, function_tool
+from agents import Agent, Runner
 
 # Path to your satellite/aerial image.
 # Update this to point to your own satellite image with car parks.
@@ -81,11 +80,8 @@ def image_to_base64(image_path: str) -> tuple[str, str]:
     return encoded_string, mime_type
 
 
-@function_tool
 def draw_bounding_boxes(
-    image_path: Annotated[str, "Path to the original image"],
-    detections: Annotated[CarParksDetection, "Car park detection results"],
-    output_path: Annotated[str, "Path to save the annotated image"],
+    image_path: str, detections: CarParksDetection, output_path: str
 ) -> str:
     """Draw bounding boxes on the image and save the result."""
     # Open the image.
@@ -168,7 +164,6 @@ For each car park you detect:
 
 Return your findings in the structured format specified.
 """,
-        tools=[draw_bounding_boxes],
         output_type=CarParksDetection,
         model="gpt-4o",  # Use vision-capable model.
     )
@@ -192,10 +187,7 @@ Return your findings in the structured format specified.
                 "role": "user",
                 "content": """Analyze this satellite/aerial image and identify all car parks.
 
-Remember: Identify ENTIRE car parks (parking lots), not individual parking spaces.
-
-After identifying the car parks, use the draw_bounding_boxes tool to create an
-annotated version of the image.""",
+Remember: Identify ENTIRE car parks (parking lots), not individual parking spaces.""",
             },
         ],
     )

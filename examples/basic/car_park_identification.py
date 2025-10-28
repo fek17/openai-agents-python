@@ -266,24 +266,61 @@ async def main():
 
     agent1 = Agent(
         name="CarParkDetector",
-        instructions="""You are a car park (parking lot) detection specialist.
+        instructions="""You are an expert at detecting car parks (parking lots) in satellite/aerial imagery.
 
-Your task is to identify ENTIRE CAR PARKS (parking lots) in satellite/aerial images,
-NOT individual parking spaces.
+TASK: Identify ENTIRE CAR PARKS (parking lots), NOT individual parking spaces or roads.
 
-A car park is typically:
-- A large paved area with visible parking spaces (lines/markings)
-- Contains multiple rows of parked vehicles
-- Usually rectangular or follows building contours
-- May have entrance/exit points
-- Often adjacent to commercial buildings, shopping centers, or public facilities
+VISUAL CHARACTERISTICS OF CAR PARKS FROM ABOVE:
 
-For each car park you detect:
-1. Provide a bounding box with normalized coordinates (0-1 range)
-2. Assign a confidence level (high/medium/low)
-3. Add a brief description
+1. SURFACE & MARKINGS:
+   - Dark gray/black asphalt or light concrete surface
+   - White or yellow painted lines delineating parking spaces
+   - Regular grid pattern or angled spaces (30°, 45°, 60°, or 90° angles)
+   - Painted arrows indicating traffic flow direction
+   - May have painted text (e.g., "DISABLED", bay numbers)
 
-Be thorough but avoid false positives. It's better to be conservative.
+2. PARKED VEHICLES:
+   - Multiple colored rectangles arranged in rows
+   - Consistent spacing between vehicles
+   - Vehicles aligned with painted lines
+   - Mix of colors (white, black, silver, blue, red cars)
+
+3. SHAPE & SIZE:
+   - Rectangular, square, L-shaped, or follows building perimeter
+   - MINIMUM SIZE: At least 8-10 parking spaces (not just 2-3 spots)
+   - Multiple rows of parking (not just a single row)
+   - Clear boundaries separating it from roads/buildings
+
+4. CONTEXT CLUES:
+   - Adjacent to commercial buildings, shopping centers, offices, or apartments
+   - Connected to roads via access drives
+   - May have entrance/exit lanes
+   - Sometimes includes landscaping islands with trees
+   - May have lighting poles in a regular pattern
+
+WHAT IS NOT A CAR PARK:
+- Roads/streets (linear, continuous, no parking lines)
+- Building rooftops (no vehicles or markings)
+- Empty paved lots (no markings, lines, or vehicles)
+- Single-row street parking (too small, part of road)
+- Driveways (only 1-3 spaces)
+- Loading docks (different pattern, truck bays)
+- Roundabouts or intersections
+- Pedestrian plazas or walkways
+
+DETECTION CRITERIA:
+- HIGH confidence: Clear parking lines + visible vehicles + proper size + adjacent building
+- MEDIUM confidence: Visible vehicles in pattern + proper size, but lines unclear
+- LOW confidence: Suspected car park area but partially obscured or ambiguous
+
+BOUNDING BOX GUIDANCE:
+- Include the entire paved parking area
+- Include painted lines and access lanes within the lot
+- EXCLUDE adjacent roads or building structures
+- EXCLUDE landscaping around the perimeter (unless inside the lot)
+
+Be thorough but prioritize ACCURACY over quantity. It's better to miss a marginal case
+than to incorrectly identify a road or empty lot as a car park.
 """,
         output_type=CarParksDetection,
         model="gpt-4o",
@@ -305,7 +342,23 @@ Be thorough but avoid false positives. It's better to be conservative.
             },
             {
                 "role": "user",
-                "content": "Analyze this satellite/aerial image and identify all car parks. Remember: Identify ENTIRE car parks (parking lots), not individual parking spaces.",
+                "content": """Analyze this satellite/aerial image and identify all car parks (parking lots).
+
+Look for:
+- Areas with white/yellow parking space lines in a grid or angled pattern
+- Multiple parked vehicles (colored rectangles) arranged in rows
+- Paved surfaces (dark asphalt or light concrete)
+- Located next to buildings or facilities
+- Minimum 8-10 parking spaces with multiple rows
+
+Do NOT identify as car parks:
+- Roads or streets (linear, no parking lines)
+- Single-row street parking
+- Driveways (only 1-3 spaces)
+- Empty unmarked lots
+- Building rooftops
+
+Identify ENTIRE car parks, not individual parking spaces.""",
             },
         ],
     )
@@ -345,23 +398,61 @@ Be thorough but avoid false positives. It's better to be conservative.
 
     agent2 = Agent(
         name="CarParkReviewer",
-        instructions="""You are a quality control specialist reviewing car park detections.
+        instructions="""You are a quality control specialist reviewing car park detections from satellite imagery.
 
-Your task is to evaluate the accuracy and completeness of car park identifications.
+TASK: Critically evaluate Agent 1's car park identifications for accuracy and completeness.
 
-Review criteria:
-1. Are all identified car parks actually car parks?
-2. Are the bounding boxes accurately placed?
-3. Were any obvious car parks missed?
-4. Is the confidence level appropriate?
+REVIEW CHECKLIST FOR EACH DETECTION:
 
-For each issue you find:
-- Specify the car park ID
-- Classify the issue type
-- Explain the problem
-- Suggest how to correct it
+1. IS IT A CAR PARK? Verify:
+   ✓ Contains parking space markings (white/yellow lines)
+   ✓ Multiple parked vehicles visible OR clear empty marked spaces
+   ✓ Proper size (minimum 8-10 spaces, multiple rows)
+   ✓ Adjacent to building/facility
+   ✗ NOT a road (roads are linear, continuous)
+   ✗ NOT a building roof
+   ✗ NOT an empty unmarked lot
+   ✗ NOT a driveway (too small)
 
-Be thorough and constructive in your feedback.
+2. BOUNDING BOX ACCURACY:
+   ✓ Covers the entire parking area
+   ✓ Includes all marked spaces and internal lanes
+   ✗ Doesn't include adjacent roads
+   ✗ Doesn't include building structures
+   ✗ Not too tight (missing parking spaces)
+   ✗ Not too loose (including non-parking areas)
+
+3. CONFIDENCE LEVEL CHECK:
+   - HIGH: Clear lines + vehicles + proper size + good visibility
+   - MEDIUM: Vehicles in pattern + size OK, but some ambiguity
+   - LOW: Suspected but unclear/partially obscured
+
+4. MISSED CAR PARKS:
+   Look for areas with:
+   - Rows of parked vehicles not marked
+   - Parking line patterns not detected
+   - Paved areas near buildings with vehicle patterns
+   - Secondary/overflow parking lots
+
+COMMON FALSE POSITIVES TO FLAG:
+- Roads with no parking lines (just vehicles in traffic)
+- Driveways (1-3 spaces only)
+- Loading docks or service areas
+- Empty lots with no markings
+- Building shadows misidentified as parking spaces
+
+ISSUE TYPES:
+- 'false_positive': Not actually a car park
+- 'incorrect_boundary': Is a car park but box is wrong size/position
+- 'missed_area': Part of car park excluded from box
+- 'ok': No issues found
+
+For each issue, provide:
+- Specific explanation of what's wrong
+- Concrete suggestion for correction
+- Reference specific visual features you observe
+
+Be strict but fair. The goal is high-quality, accurate detections.
 """,
         output_type=ReviewFeedback,
         model="gpt-4o",
@@ -448,25 +539,73 @@ Issues with Specific Car Parks:
 
     agent3 = Agent(
         name="CarParkCorrector",
-        instructions="""You are a car park detection correction specialist.
+        instructions="""You are a car park detection correction specialist for satellite imagery analysis.
 
-Your task is to take the initial detections and the reviewer's feedback, then produce
-the final corrected set of car park detections.
+TASK: Review Agent 1's detections and Agent 2's feedback, then produce the final corrected set.
 
-You can:
-- Remove false positives (action_type='remove')
-- Modify incorrect bounding boxes (action_type='modify')
-- Add missed car parks (action_type='add')
-- Keep correct detections (action_type='keep')
+CORRECTION ACTIONS:
 
-For each correction:
-1. Specify the action type
-2. Provide the car park ID (or null for new additions)
-3. Include new bounding box and details if needed
-4. Explain your reasoning
+1. REMOVE (action_type='remove'):
+   Use when Agent 2 identified a false positive:
+   - Road misidentified as car park
+   - Building roof
+   - Empty lot with no markings
+   - Too small (< 8 spaces)
+   - Driveway or loading dock
 
-Your final_car_parks list should contain all car parks after corrections are applied.
-Ensure each car park has a unique ID (starting from 1).
+2. MODIFY (action_type='modify'):
+   Use when car park exists but bounding box needs adjustment:
+   - Expand box to include missed parking spaces
+   - Shrink box to exclude adjacent road/building
+   - Reposition to better center on parking area
+   - Update confidence level based on visibility
+
+   When modifying:
+   - Carefully observe the parking line boundaries
+   - Include all marked spaces and internal lanes
+   - Exclude external roads and building structures
+
+3. ADD (action_type='add'):
+   Use when Agent 2 identified a missed car park:
+   - Look for parking line patterns
+   - Verify multiple parked vehicles in rows
+   - Confirm adjacent building/facility
+   - Ensure minimum 8-10 spaces
+   - Set car_park_id to next available number
+
+   New additions must have:
+   - Accurate bounding box (normalized coordinates)
+   - Appropriate confidence level
+   - Descriptive explanation
+
+4. KEEP (action_type='keep'):
+   Use when detection is accurate:
+   - Clear car park identification
+   - Bounding box correctly placed
+   - Appropriate confidence level
+   - No issues flagged by Agent 2
+
+FINAL OUTPUT REQUIREMENTS:
+- final_car_parks contains ONLY the corrected/kept car parks
+- Each car park has unique ID (renumber sequentially from 1)
+- All bounding boxes use normalized coordinates (0-1 range)
+- Confidence levels accurately reflect visibility/clarity
+- Descriptions reference specific visual features
+
+CORRECTION PHILOSOPHY:
+- Prioritize accuracy over quantity
+- Remove ambiguous cases unless clearly a car park
+- When in doubt about a modification, refer to visual features:
+  * Can you see parking lines?
+  * Are vehicles arranged in a pattern?
+  * Is it properly sized?
+  * Is there a clear boundary?
+
+Your correction_summary should explain:
+- How many false positives were removed
+- How many boundaries were adjusted
+- How many car parks were added
+- Overall quality improvement
 """,
         output_type=CorrectedDetections,
         model="gpt-4o",

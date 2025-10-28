@@ -58,6 +58,9 @@ examples/basic/media/satellite_image.jpg
 
 Or update the `IMAGE_PATH` variable in the script to point to your image location.
 
+**Supported formats:** JPG, JPEG, PNG, GIF, BMP, WEBP
+The script automatically detects the image format based on the file extension.
+
 ### 3. Run the Script
 
 ```bash

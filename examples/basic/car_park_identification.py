@@ -21,6 +21,7 @@ The script will:
 
 import asyncio
 import base64
+import mimetypes
 import os
 from typing import Annotated
 
@@ -31,6 +32,7 @@ from agents import Agent, Runner, function_tool
 
 # Path to your satellite/aerial image.
 # Update this to point to your own satellite image with car parks.
+# Supports: JPG, JPEG, PNG, GIF, BMP, WEBP (auto-detected from extension).
 IMAGE_PATH = os.path.join(os.path.dirname(__file__), "media/satellite_image.jpg")
 OUTPUT_PATH = os.path.join(os.path.dirname(__file__), "car_parks_annotated.jpg")
 
@@ -60,11 +62,23 @@ class CarParksDetection(BaseModel):
     total_count: int = Field(description="Total number of car parks detected")
 
 
-def image_to_base64(image_path: str) -> str:
-    """Convert an image file to base64 string."""
+def image_to_base64(image_path: str) -> tuple[str, str]:
+    """Convert an image file to base64 string and detect MIME type.
+
+    Returns:
+        tuple: (base64_string, mime_type)
+    """
     with open(image_path, "rb") as image_file:
         encoded_string = base64.b64encode(image_file.read()).decode("utf-8")
-    return encoded_string
+
+    # Detect MIME type from file extension.
+    mime_type, _ = mimetypes.guess_type(image_path)
+
+    # Default to image/jpeg if detection fails.
+    if not mime_type or not mime_type.startswith("image/"):
+        mime_type = "image/jpeg"
+
+    return encoded_string, mime_type
 
 
 @function_tool
@@ -127,9 +141,10 @@ async def main():
         print("  - NASA Earth Observatory")
         return
 
-    # Convert image to base64.
+    # Convert image to base64 and detect format.
     print(f"Loading image from: {IMAGE_PATH}")
-    b64_image = image_to_base64(IMAGE_PATH)
+    b64_image, mime_type = image_to_base64(IMAGE_PATH)
+    print(f"Detected image format: {mime_type}")
 
     # Create the agent with vision capabilities.
     agent = Agent(
@@ -169,7 +184,7 @@ Return your findings in the structured format specified.
                     {
                         "type": "input_image",
                         "detail": "high",  # Use high detail for better detection.
-                        "image_url": f"data:image/jpeg;base64,{b64_image}",
+                        "image_url": f"data:{mime_type};base64,{b64_image}",
                     }
                 ],
             },

@@ -40,7 +40,16 @@ The architecture supports running both agents in parallel, which can:
 - Make better use of API rate limits
 - Improve overall throughput
 
-### 4. **More Accurate Results**
+### 4. **Retry Logic with Exponential Backoff**
+
+The parallel version includes robust retry handling:
+- Automatic retries for transient failures (rate limits, network issues, timeouts)
+- Exponential backoff with jitter to avoid thundering herd
+- Configurable retry attempts and delays
+- Smart detection of retryable vs non-retryable errors
+- Default: 3 retries with 2s base delay (2s, 4s, 8s)
+
+### 5. **More Accurate Results**
 
 Because each agent is specialized:
 - Email format searches are more targeted
@@ -145,6 +154,33 @@ main(
 )
 ```
 
+### Configuring Retry Behavior (Parallel Version)
+
+The parallel version includes configurable retry logic:
+
+```python
+from multi_agent_email_scraper_parallel import main
+
+main(
+    input_file="companies.csv",
+    output_file="contacts.csv",
+    max_retries=5,           # Default: 3
+    retry_base_delay=3.0     # Default: 2.0 seconds
+)
+```
+
+**Retry Strategy:**
+- **Exponential backoff**: Delays double with each retry (2s → 4s → 8s)
+- **Jitter**: Random 10% variation added to prevent thundering herd
+- **Max delay**: Capped at 60 seconds
+- **Smart detection**: Only retries on rate limits, timeouts, network errors
+- **Non-retryable errors**: Fails immediately on logic errors (e.g., max turns exceeded)
+
+**When to adjust:**
+- **High rate limits**: Increase `retry_base_delay` to 5.0 or more
+- **Unreliable network**: Increase `max_retries` to 5-7
+- **Fast API**: Decrease `retry_base_delay` to 1.0
+
 ### Changing the Model
 
 To use a different model, edit the agents in the code:
@@ -244,15 +280,45 @@ results = asyncio.run(process_multiple())
 
 The script automatically detects and removes duplicates based on first+last name combinations.
 
+### Rate Limit Errors (429)
+
+If you see rate limit errors:
+```
+⚠️  EmailFormatDiscovery: Attempt 1/3 failed: 429 Rate limit exceeded
+   Retrying in 2.3s...
+```
+
+**Solutions:**
+1. The script will automatically retry with exponential backoff
+2. Increase `retry_base_delay` to wait longer between retries
+3. Increase `max_retries` if you need more attempts
+4. Consider processing fewer companies at once
+
+### Network Timeouts
+
+For timeout errors:
+```
+⚠️  ExecutiveSearch: Attempt 2/3 failed: Connection timeout
+   Retrying in 4.7s...
+```
+
+**Solutions:**
+1. The script automatically retries network errors
+2. Check your internet connection
+3. Increase `max_retries` for unreliable networks
+4. If persists, check if the web search API is accessible
+
 ## Comparison: Single vs Multi-Agent
 
-| Aspect | Single Agent | Multi-Agent |
-|--------|--------------|-------------|
-| **Clarity** | One set of mixed instructions | Clear, focused instructions per agent |
-| **Debugging** | Hard to tell which part failed | Easy to isolate issues |
-| **Performance** | Sequential execution | Can parallelize searches |
-| **Accuracy** | Agent gets confused | Each agent stays on task |
-| **Extensibility** | Hard to add features | Easy to add new specialized agents |
+| Aspect | Single Agent | Multi-Agent | Multi-Agent Parallel |
+|--------|--------------|-------------|---------------------|
+| **Clarity** | One set of mixed instructions | Clear, focused instructions per agent | Clear, focused instructions per agent |
+| **Debugging** | Hard to tell which part failed | Easy to isolate issues | Easy to isolate issues |
+| **Performance** | Sequential execution | Can parallelize searches | True parallel execution |
+| **Accuracy** | Agent gets confused | Each agent stays on task | Each agent stays on task |
+| **Extensibility** | Hard to add features | Easy to add new specialized agents | Easy to add new specialized agents |
+| **Reliability** | No retry logic | No retry logic | Exponential backoff retries |
+| **Error Handling** | Basic error catching | Basic error catching | Smart retry on transient failures |
 
 ## Future Enhancements
 

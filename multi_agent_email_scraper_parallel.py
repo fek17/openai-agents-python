@@ -13,6 +13,7 @@ import re
 import unicodedata
 from pathlib import Path
 from typing import List, TypedDict
+import random
 
 import pandas as pd
 
@@ -398,6 +399,85 @@ def parse_executives(output: str, company_name: str) -> List[Person]:
 
 
 # =========================================================
+# Retry logic with exponential backoff
+# =========================================================
+
+async def run_agent_with_retry(
+    agent: Agent,
+    prompt: str,
+    max_turns: int = 20,
+    max_retries: int = 3,
+    base_delay: float = 2.0,
+    max_delay: float = 60.0
+):
+    """
+    Run an agent with exponential backoff retry logic.
+
+    Args:
+        agent: The agent to run
+        prompt: The prompt to send to the agent
+        max_turns: Maximum turns for the agent
+        max_retries: Maximum number of retry attempts (default: 3)
+        base_delay: Base delay in seconds for exponential backoff (default: 2.0)
+        max_delay: Maximum delay in seconds (default: 60.0)
+
+    Returns:
+        Agent result or raises exception after all retries exhausted
+    """
+    last_exception = None
+
+    for attempt in range(max_retries):
+        try:
+            result = await Runner.run(agent, prompt, max_turns=max_turns)
+            return result
+
+        except MaxTurnsExceeded as e:
+            # Don't retry if max turns exceeded - this is a logic issue, not transient
+            print(f"⚠️  {agent.name}: Max turns exceeded (not retrying)")
+            raise e
+
+        except Exception as e:
+            last_exception = e
+
+            # Check if this is a rate limit or network error (retryable)
+            error_msg = str(e).lower()
+            is_retryable = any(keyword in error_msg for keyword in [
+                'rate limit',
+                'timeout',
+                'connection',
+                'network',
+                'temporarily unavailable',
+                'service unavailable',
+                '429',  # HTTP 429 Too Many Requests
+                '500',  # HTTP 500 Internal Server Error
+                '502',  # HTTP 502 Bad Gateway
+                '503',  # HTTP 503 Service Unavailable
+                '504',  # HTTP 504 Gateway Timeout
+            ])
+
+            if not is_retryable:
+                print(f"❌ {agent.name}: Non-retryable error: {e}")
+                raise e
+
+            if attempt < max_retries - 1:
+                # Calculate exponential backoff with jitter
+                delay = min(base_delay * (2 ** attempt), max_delay)
+                jitter = random.uniform(0, delay * 0.1)  # Add 10% jitter
+                total_delay = delay + jitter
+
+                print(f"⚠️  {agent.name}: Attempt {attempt + 1}/{max_retries} failed: {e}")
+                print(f"   Retrying in {total_delay:.1f}s...")
+
+                await asyncio.sleep(total_delay)
+            else:
+                print(f"❌ {agent.name}: All {max_retries} retry attempts exhausted")
+                raise last_exception
+
+    # Should never reach here, but just in case
+    raise last_exception
+
+
+# =========================================================
 # Main parallel processing function
 # =========================================================
 
@@ -406,12 +486,26 @@ async def process_company_parallel(
     company_domain: str,
     company_website: str = "",
     output_file: str = "contacts.csv",
-    max_turns: int = 20
+    max_turns: int = 20,
+    max_retries: int = 3,
+    retry_base_delay: float = 2.0
 ) -> tuple[pd.DataFrame | None, str]:
     """
-    Process a single company using parallel agent execution.
+    Process a single company using parallel agent execution with retry logic.
 
     Both agents run simultaneously for better performance.
+
+    Args:
+        company_name: Name of the company
+        company_domain: Company domain (e.g., 'company.com')
+        company_website: Full website URL (optional)
+        output_file: Output CSV file path
+        max_turns: Maximum turns per agent
+        max_retries: Maximum retry attempts for transient failures (default: 3)
+        retry_base_delay: Base delay in seconds for exponential backoff (default: 2.0)
+
+    Returns:
+        Tuple of (DataFrame with results or None, output file path)
     """
 
     print(f"\n{'='*60}")
@@ -439,13 +533,25 @@ Title: [Job Title]
 """
 
     try:
-        # Run both agents IN PARALLEL using asyncio.gather
+        # Run both agents IN PARALLEL using asyncio.gather with retry logic
         with trace(f"Processing {company_name}"):
-            print("🚀 Running both agents in parallel...")
+            print("🚀 Running both agents in parallel with retry support...")
 
             format_result, executive_result = await asyncio.gather(
-                Runner.run(email_format_agent, format_prompt, max_turns=max_turns),
-                Runner.run(executive_search_agent, executive_prompt, max_turns=max_turns),
+                run_agent_with_retry(
+                    email_format_agent,
+                    format_prompt,
+                    max_turns=max_turns,
+                    max_retries=max_retries,
+                    base_delay=retry_base_delay
+                ),
+                run_agent_with_retry(
+                    executive_search_agent,
+                    executive_prompt,
+                    max_turns=max_turns,
+                    max_retries=max_retries,
+                    base_delay=retry_base_delay
+                ),
                 return_exceptions=True
             )
 
@@ -501,14 +607,18 @@ Title: [Job Title]
 
 async def process_multiple_companies(
     companies: List[tuple[str, str, str]],
-    output_dir: str = "."
+    output_dir: str = ".",
+    max_retries: int = 3,
+    retry_base_delay: float = 2.0
 ) -> List[pd.DataFrame]:
     """
-    Process multiple companies in parallel.
+    Process multiple companies in parallel with retry logic.
 
     Args:
         companies: List of (company_name, domain, website) tuples
         output_dir: Directory to save output files
+        max_retries: Maximum retry attempts for transient failures (default: 3)
+        retry_base_delay: Base delay in seconds for exponential backoff (default: 2.0)
 
     Returns:
         List of DataFrames with results
@@ -526,7 +636,9 @@ async def process_multiple_companies(
                 company_domain=domain,
                 company_website=website,
                 output_file=output_file,
-                max_turns=20
+                max_turns=20,
+                max_retries=max_retries,
+                retry_base_delay=retry_base_delay
             )
         )
 
@@ -550,8 +662,21 @@ async def process_multiple_companies(
 # Main execution
 # =========================================================
 
-def main(input_file: str, output_file: str = "all_contacts_output.csv"):
-    """Process multiple companies from spreadsheet."""
+def main(
+    input_file: str,
+    output_file: str = "all_contacts_output.csv",
+    max_retries: int = 3,
+    retry_base_delay: float = 2.0
+):
+    """
+    Process multiple companies from spreadsheet with retry logic.
+
+    Args:
+        input_file: Path to CSV or Excel file with companies
+        output_file: Path for output CSV file
+        max_retries: Maximum retry attempts for transient failures (default: 3)
+        retry_base_delay: Base delay in seconds for exponential backoff (default: 2.0)
+    """
 
     print(f"📂 Reading: {input_file}")
 
@@ -611,7 +736,9 @@ def main(input_file: str, output_file: str = "all_contacts_output.csv"):
                 company_domain=company_domain,
                 company_website=website,
                 output_file=temp_csv,
-                max_turns=20
+                max_turns=20,
+                max_retries=max_retries,
+                retry_base_delay=retry_base_delay
             )
 
             if result_df is not None and len(result_df) > 0:

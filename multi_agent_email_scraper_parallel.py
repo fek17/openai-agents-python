@@ -33,6 +33,18 @@ class Person(TypedDict):
     title: str
 
 
+class EmailFormatPatterns(TypedDict):
+    """Structured email format patterns discovered by the agent."""
+    patterns: List[str]
+    notes: str
+
+
+class ExecutiveList(TypedDict):
+    """Structured list of executives found by the agent."""
+    executives: List[Person]
+    count: int
+
+
 class EmailGuess(TypedDict):
     """Structured record for guessed email."""
     company_name: str
@@ -179,25 +191,32 @@ def generate_emails_sync(
     """Combine names and formats to generate email guesses."""
 
     print(f"\n🔧 Generating emails: {len(names)} people, {len(formats)} formats")
+    print(f"   Domain: {company_domain}")
+    print(f"   Formats: {formats}")
 
     # Use defaults if no formats
     if not formats:
-        print(f"   Using default formats")
+        print(f"   ℹ️  No formats provided, using defaults")
         formats = [
             f"{{first}}.{{last}}@{company_domain}",
             f"{{first}}{{last}}@{company_domain}",
             f"{{f}}{{last}}@{company_domain}",
         ]
 
+    print(f"   Final formats to use: {formats}")
+
     # Check duplicates
     names = detect_duplicates(names)
 
     results = []
+    failed_count = 0
 
     for n in names:
         company, first, last, title = n["company_name"], n["first_name"], n["last_name"], n["title"]
 
         if not first or not last:
+            print(f"   ⚠️  Skipping {title}: missing name (first={first}, last={last})")
+            failed_count += 1
             continue
 
         # Sanitize names
@@ -205,6 +224,8 @@ def generate_emails_sync(
         last_clean = sanitize_name(last)
 
         if not first_clean or not last_clean:
+            print(f"   ⚠️  Skipping {first} {last}: name sanitization failed")
+            failed_count += 1
             continue
 
         first_simple = get_simple_name(first_clean)
@@ -224,14 +245,20 @@ def generate_emails_sync(
             for placeholder, value in replacements:
                 email = email.replace(placeholder, value)
 
-            if not email.endswith(company_domain):
-                if '@' not in email:
-                    email = f"{email}@{company_domain}"
-
+            # Skip if placeholders weren't replaced
             if '{' in email or '}' in email:
+                print(f"   ⚠️  Skipping malformed email: {email} (unreplaced placeholders)")
+                failed_count += 1
                 continue
 
+            # Add domain if missing
+            if '@' not in email:
+                email = f"{email}@{company_domain}"
+
+            # Validate email format
             if not re.match(r'^[a-zA-Z0-9._-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$', email):
+                print(f"   ⚠️  Skipping invalid email: {email}")
+                failed_count += 1
                 continue
 
             results.append({
@@ -242,7 +269,7 @@ def generate_emails_sync(
                 "email_guess": email,
             })
 
-    print(f"✅ Generated {len(results)} emails\n")
+    print(f"✅ Generated {len(results)} valid emails ({failed_count} skipped)\n")
     return results
 
 
@@ -261,30 +288,32 @@ email_format_agent = Agent(
         "1. Search for: '{company_name} email format'\n"
         "2. Search for: '{company_name} contact email address'\n"
         "3. Search for: 'site:{company_domain} contact email'\n"
-        "4. Look for patterns like:\n"
-        "   - firstname.lastname@domain.com\n"
-        "   - firstnamelastname@domain.com\n"
-        "   - first.last@domain.com\n"
-        "   - f.lastname@domain.com\n"
-        "   - flastname@domain.com\n\n"
+        "4. Look for actual employee emails and extract the pattern\n\n"
 
-        "Output format:\n"
-        "Return a list of format patterns using placeholders:\n"
-        "- {first} or {firstname} for first name\n"
-        "- {last} or {lastname} for last name\n"
-        "- {f} for first initial\n"
-        "- {l} for last initial\n\n"
+        "CRITICAL - You MUST return a structured JSON output with this EXACT format:\n"
+        "{\n"
+        '  "patterns": [\n'
+        '    "{first}.{last}@domain.com",\n'
+        '    "{first}{last}@domain.com"\n'
+        "  ],\n"
+        '  "notes": "Found pattern from LinkedIn and company website"\n'
+        "}\n\n"
 
-        "Examples of formats to return:\n"
-        "- '{first}.{last}@company.com'\n"
-        "- '{first}{last}@company.com'\n"
-        "- '{f}{last}@company.com'\n\n"
+        "Format pattern placeholders:\n"
+        "- {first} = first name (e.g., john)\n"
+        "- {last} = last name (e.g., smith)\n"
+        "- {f} = first initial (e.g., j)\n"
+        "- {l} = last initial (e.g., s)\n\n"
 
-        "Return 1-3 most likely patterns based on your search.\n"
-        "If you cannot find any patterns, say 'No specific patterns found'.\n"
+        "IMPORTANT:\n"
+        "- Include the FULL email with @domain.com in each pattern\n"
+        "- Return 1-3 most likely patterns\n"
+        "- If you cannot find patterns, return empty list: {\"patterns\": [], \"notes\": \"No patterns found\"}\n"
+        "- Always use the ACTUAL company domain provided in the prompt\n"
     ),
     tools=[WebSearchTool()],
     model="gpt-4o-mini",
+    output_type=EmailFormatPatterns,
 )
 
 
@@ -317,85 +346,72 @@ executive_search_agent = Agent(
         "- Engineers, Developers, Analysts\n"
         "- Consultants, Associates\n\n"
 
-        "For each person found, provide in this EXACT format:\n"
-        "Name: [First Last]\n"
-        "Title: [Job Title]\n"
-        "---\n\n"
+        "CRITICAL - You MUST return a structured JSON output with this EXACT format:\n"
+        "{\n"
+        '  "executives": [\n'
+        "    {\n"
+        '      "company_name": "Company Name",\n'
+        '      "first_name": "John",\n'
+        '      "last_name": "Smith",\n'
+        '      "title": "CEO"\n'
+        "    },\n"
+        "    {\n"
+        '      "company_name": "Company Name",\n'
+        '      "first_name": "Jane",\n'
+        '      "last_name": "Doe",\n'
+        '      "title": "CFO"\n'
+        "    }\n"
+        "  ],\n"
+        '  "count": 2\n'
+        "}\n\n"
 
-        "Aim to find 5-15 senior executives per company.\n"
+        "IMPORTANT:\n"
+        "- Split names into first_name and last_name (no middle names)\n"
+        "- Use the company_name from the prompt for each executive\n"
+        "- Only include senior roles as defined above\n"
+        "- Aim to find 5-15 senior executives per company\n"
+        "- Set count to the number of executives found\n"
     ),
     tools=[WebSearchTool()],
     model="gpt-4o-mini",
+    output_type=ExecutiveList,
 )
 
 
 # =========================================================
-# Parse agent outputs
+# Extract structured outputs from agents
 # =========================================================
 
-def parse_email_formats(output: str) -> List[str]:
-    """Parse email format patterns from agent output."""
-    if "No specific patterns found" in output:
+def extract_email_formats(result) -> List[str]:
+    """Extract email format patterns from structured agent output."""
+    try:
+        # Agent returns EmailFormatPatterns TypedDict
+        if hasattr(result, 'final_output'):
+            output = result.final_output
+            if isinstance(output, dict) and 'patterns' in output:
+                patterns = output['patterns']
+                print(f"   Patterns found: {patterns}")
+                return patterns if patterns else []
+        return []
+    except Exception as e:
+        print(f"⚠️  Error extracting email formats: {e}")
         return []
 
-    # Look for format patterns in the output
-    patterns = []
-    pattern_regex = r'\{(?:first|firstname|last|lastname|f|l)\}[.\-_]?\{?(?:first|firstname|last|lastname|f|l)?\}?@[\w\.-]+'
 
-    found_patterns = re.findall(pattern_regex, output)
-    if found_patterns:
-        patterns.extend(found_patterns)
-
-    # Also look for common patterns mentioned in text
-    common_patterns = [
-        r'\{first\}\.\{last\}',
-        r'\{first\}\{last\}',
-        r'\{f\}\{last\}',
-        r'\{firstname\}\.\{lastname\}',
-        r'\{f\}\.\{last\}',
-    ]
-
-    for pattern in common_patterns:
-        if pattern in output:
-            patterns.append(pattern)
-
-    return list(set(patterns))  # Remove duplicates
-
-
-def parse_executives(output: str, company_name: str) -> List[Person]:
-    """Parse executive names and titles from agent output."""
-    executives = []
-
-    # Split by --- or double newline
-    entries = re.split(r'---+|\n\n', output)
-
-    for entry in entries:
-        entry = entry.strip()
-        if not entry:
-            continue
-
-        # Look for Name: and Title: patterns
-        name_match = re.search(r'Name:\s*([^\n]+)', entry, re.IGNORECASE)
-        title_match = re.search(r'Title:\s*([^\n]+)', entry, re.IGNORECASE)
-
-        if name_match and title_match:
-            full_name = name_match.group(1).strip()
-            title = title_match.group(1).strip()
-
-            # Split name into first and last
-            name_parts = full_name.split()
-            if len(name_parts) >= 2:
-                first_name = name_parts[0]
-                last_name = ' '.join(name_parts[1:])
-
-                executives.append({
-                    'company_name': company_name,
-                    'first_name': first_name,
-                    'last_name': last_name,
-                    'title': title
-                })
-
-    return executives
+def extract_executives(result) -> List[Person]:
+    """Extract executive list from structured agent output."""
+    try:
+        # Agent returns ExecutiveList TypedDict
+        if hasattr(result, 'final_output'):
+            output = result.final_output
+            if isinstance(output, dict) and 'executives' in output:
+                executives = output['executives']
+                print(f"   Executives found: {len(executives)}")
+                return executives if executives else []
+        return []
+    except Exception as e:
+        print(f"⚠️  Error extracting executives: {e}")
+        return []
 
 
 # =========================================================
@@ -555,19 +571,19 @@ Title: [Job Title]
                 return_exceptions=True
             )
 
-            # Check for exceptions
+            # Check for exceptions and extract structured outputs
             if isinstance(format_result, Exception):
                 print(f"⚠️  Email format agent failed: {format_result}")
                 email_formats = []
             else:
-                email_formats = parse_email_formats(str(format_result.final_output))
+                email_formats = extract_email_formats(format_result)
                 print(f"✅ Found {len(email_formats)} email format(s)")
 
             if isinstance(executive_result, Exception):
                 print(f"⚠️  Executive search agent failed: {executive_result}")
                 executives = []
             else:
-                executives = parse_executives(str(executive_result.final_output), company_name)
+                executives = extract_executives(executive_result)
                 print(f"✅ Found {len(executives)} executive(s)")
 
             # Generate emails

@@ -49,13 +49,23 @@ The parallel version includes robust retry handling:
 - Smart detection of retryable vs non-retryable errors
 - Default: 3 retries with 2s base delay (2s, 4s, 8s)
 
-### 5. **More Accurate Results**
+### 5. **Structured Outputs**
+
+The parallel version uses strongly-typed structured outputs:
+- **EmailFormatAgent** returns `EmailFormatPatterns` TypedDict with validated patterns
+- **ExecutiveSearchAgent** returns `ExecutiveList` TypedDict with person objects
+- No regex parsing needed - direct JSON extraction
+- Guaranteed consistency and correctness
+- Better debugging with clear data validation
+
+### 6. **More Accurate Results**
 
 Because each agent is specialized:
 - Email format searches are more targeted
 - Executive searches use better query strategies
 - Less confusion about what each step should do
 - Clearer output from each stage
+- Structured outputs prevent parsing errors
 
 ## Architecture
 
@@ -280,6 +290,31 @@ results = asyncio.run(process_multiple())
 
 The script automatically detects and removes duplicates based on first+last name combinations.
 
+### "Generated 0 emails" (despite finding executives and formats)
+
+If you see:
+```
+✅ Found 1 email format(s)
+✅ Found 10 executive(s)
+🔧 Generating emails: 10 people, 1 formats
+✅ Generated 0 emails
+```
+
+**This was fixed in the structured output version!**
+
+**Causes:**
+1. Email patterns missing the full domain (e.g., `{first}.{last}` instead of `{first}.{last}@company.com`)
+2. Malformed patterns with unreplaced placeholders
+3. Name parsing issues (missing first/last names)
+
+**Solutions:**
+1. Use the latest version with structured outputs (`output_type=EmailFormatPatterns`)
+2. Check debug output - it now shows:
+   - `Domain: company.com`
+   - `Formats: ['{first}.{last}@company.com']`
+   - `⚠️ Skipping malformed email: ...` messages
+3. The new version validates patterns include the full `@domain.com`
+
 ### Rate Limit Errors (429)
 
 If you see rate limit errors:
@@ -313,12 +348,14 @@ For timeout errors:
 | Aspect | Single Agent | Multi-Agent | Multi-Agent Parallel |
 |--------|--------------|-------------|---------------------|
 | **Clarity** | One set of mixed instructions | Clear, focused instructions per agent | Clear, focused instructions per agent |
-| **Debugging** | Hard to tell which part failed | Easy to isolate issues | Easy to isolate issues |
+| **Debugging** | Hard to tell which part failed | Easy to isolate issues | Easy to isolate issues + detailed logging |
 | **Performance** | Sequential execution | Can parallelize searches | True parallel execution |
 | **Accuracy** | Agent gets confused | Each agent stays on task | Each agent stays on task |
 | **Extensibility** | Hard to add features | Easy to add new specialized agents | Easy to add new specialized agents |
 | **Reliability** | No retry logic | No retry logic | Exponential backoff retries |
 | **Error Handling** | Basic error catching | Basic error catching | Smart retry on transient failures |
+| **Output Type** | Free text (regex parsing) | Free text (regex parsing) | Structured TypedDict (validated) |
+| **Data Validation** | Prone to parsing errors | Prone to parsing errors | Built-in validation & type checking |
 
 ## Future Enhancements
 

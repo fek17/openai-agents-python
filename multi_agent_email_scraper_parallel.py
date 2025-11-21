@@ -282,13 +282,21 @@ email_format_agent = Agent(
     instructions=(
         "You are an expert at discovering email format patterns for companies.\n\n"
 
-        "Your ONLY job is to find the email format(s) used by the given company.\n\n"
+        "Your goal: Find the email format(s) used by the given company.\n\n"
 
-        "Search strategies:\n"
-        "1. Search for: '{company_name} email format'\n"
-        "2. Search for: '{company_name} contact email address'\n"
-        "3. Search for: 'site:{company_domain} contact email'\n"
-        "4. Look for actual employee emails and extract the pattern\n\n"
+        "Suggested search strategies (use these as inspiration, but adapt as needed):\n"
+        "- Search for email formats directly (e.g., 'company email format')\n"
+        "- Look for employee email addresses on LinkedIn, company websites, or press releases\n"
+        "- Search for contact pages, about pages, or team pages\n"
+        "- Look for email addresses in news articles, blog posts, or social media\n"
+        "- Try site-specific searches (e.g., 'site:company.com email')\n"
+        "- Search for the company on email verification sites or directories\n\n"
+
+        "You have full autonomy to:\n"
+        "- Choose which searches to perform and in what order\n"
+        "- Modify search terms based on what you find\n"
+        "- Use creative search strategies to find email patterns\n"
+        "- Make multiple searches if needed to confirm patterns\n\n"
 
         "CRITICAL - You MUST return a structured JSON output with this EXACT format:\n"
         "{\n"
@@ -296,20 +304,21 @@ email_format_agent = Agent(
         '    "{first}.{last}@domain.com",\n'
         '    "{first}{last}@domain.com"\n'
         "  ],\n"
-        '  "notes": "Found pattern from LinkedIn and company website"\n'
+        '  "notes": "Found pattern from LinkedIn profiles and company website"\n'
         "}\n\n"
 
         "Format pattern placeholders:\n"
-        "- {first} = first name (e.g., john)\n"
-        "- {last} = last name (e.g., smith)\n"
+        "- {first} = first name (lowercase, e.g., john)\n"
+        "- {last} = last name (lowercase, e.g., smith)\n"
         "- {f} = first initial (e.g., j)\n"
         "- {l} = last initial (e.g., s)\n\n"
 
         "IMPORTANT:\n"
         "- Include the FULL email with @domain.com in each pattern\n"
-        "- Return 1-3 most likely patterns\n"
-        "- If you cannot find patterns, return empty list: {\"patterns\": [], \"notes\": \"No patterns found\"}\n"
+        "- Return 1-3 most likely patterns based on evidence you find\n"
+        "- If you cannot find patterns, return: {\"patterns\": [], \"notes\": \"No patterns found despite [searches performed]\"}\n"
         "- Always use the ACTUAL company domain provided in the prompt\n"
+        "- In 'notes', briefly explain where you found the pattern\n"
     ),
     tools=[WebSearchTool()],
     model="gpt-4o-mini",
@@ -320,31 +329,42 @@ email_format_agent = Agent(
 executive_search_agent = Agent(
     name="ExecutiveSearch",
     instructions=(
-        "You are an expert at finding senior executives at companies.\n\n"
+        "You are an expert at finding senior executives and leadership at companies.\n\n"
 
-        "Your ONLY job is to find C-suite executives, VPs, and Directors.\n\n"
+        "Your goal: Find C-suite executives, VPs, Directors, and other senior leadership.\n\n"
 
-        "Search strategies:\n"
-        "1. Search for: '{company_name} CEO CFO CTO executives'\n"
-        "2. Search for: '{company_name} leadership team'\n"
-        "3. Search for: '{company_name} senior management'\n"
-        "4. Search for: 'site:{company_domain} about team leadership'\n"
-        "5. Search LinkedIn: '{company_name} site:linkedin.com CEO CFO CTO'\n\n"
+        "Suggested search strategies (use these as inspiration, but adapt as needed):\n"
+        "- Search for leadership team pages on company websites\n"
+        "- Look for 'about us', 'team', 'leadership', 'management' pages\n"
+        "- Search LinkedIn for executives at the company\n"
+        "- Look for press releases, news articles mentioning executives\n"
+        "- Search for executives on Crunchbase, Bloomberg, or other business databases\n"
+        "- Look for SEC filings, annual reports (for public companies)\n"
+        "- Search social media profiles (Twitter, LinkedIn bios)\n\n"
 
-        "Target roles (ONLY include these):\n"
-        "- C-suite: CEO, CFO, CTO, CMO, COO, CIO, CSO, CHRO, etc.\n"
+        "You have full autonomy to:\n"
+        "- Choose which sources to check and in what order\n"
+        "- Adapt your search strategy based on what you find\n"
+        "- Use creative approaches to find executive names\n"
+        "- Make multiple searches to find more executives or verify information\n\n"
+
+        "Target roles (ONLY include senior leadership):\n"
+        "✅ INCLUDE:\n"
+        "- C-suite: CEO, CFO, CTO, CMO, COO, CIO, CSO, CHRO, CPO, etc.\n"
         "- EVP / Executive Vice President\n"
         "- SVP / Senior Vice President\n"
         "- VP / Vice President\n"
-        "- Managing Director\n"
-        "- Director of [major department]\n"
-        "- Head of [major department]\n"
-        "- Partner / Managing Partner\n\n"
+        "- Managing Director, General Manager\n"
+        "- Director of [major department] (e.g., Director of Engineering)\n"
+        "- Head of [major department] (e.g., Head of Sales)\n"
+        "- Partner, Managing Partner, Senior Partner\n"
+        "- Board members, Chairperson\n\n"
 
-        "DO NOT include:\n"
-        "- Managers, Coordinators, Specialists\n"
-        "- Engineers, Developers, Analysts\n"
-        "- Consultants, Associates\n\n"
+        "❌ DO NOT include:\n"
+        "- Managers (unless 'Managing Director')\n"
+        "- Coordinators, Specialists, Consultants\n"
+        "- Engineers, Developers, Analysts (unless in title like 'Chief Analyst')\n"
+        "- Associates, Assistants\n\n"
 
         "CRITICAL - You MUST return a structured JSON output with this EXACT format:\n"
         "{\n"
@@ -353,24 +373,25 @@ executive_search_agent = Agent(
         '      "company_name": "Company Name",\n'
         '      "first_name": "John",\n'
         '      "last_name": "Smith",\n'
-        '      "title": "CEO"\n'
+        '      "title": "Chief Executive Officer"\n'
         "    },\n"
         "    {\n"
         '      "company_name": "Company Name",\n'
         '      "first_name": "Jane",\n'
         '      "last_name": "Doe",\n'
-        '      "title": "CFO"\n'
+        '      "title": "VP of Marketing"\n'
         "    }\n"
         "  ],\n"
         '  "count": 2\n'
         "}\n\n"
 
         "IMPORTANT:\n"
-        "- Split names into first_name and last_name (no middle names)\n"
+        "- Split full names into first_name and last_name (ignore middle names/initials)\n"
         "- Use the company_name from the prompt for each executive\n"
-        "- Only include senior roles as defined above\n"
+        "- Only include genuinely senior roles (not mid-level managers)\n"
         "- Aim to find 5-15 senior executives per company\n"
-        "- Set count to the number of executives found\n"
+        "- Set count to the total number of executives found\n"
+        "- Use the executive's full title as listed\n"
     ),
     tools=[WebSearchTool()],
     model="gpt-4o-mini",
@@ -675,6 +696,38 @@ async def process_multiple_companies(
 
 
 # =========================================================
+# Incremental CSV saving
+# =========================================================
+
+def append_to_csv(
+    data: List[dict],
+    output_file: str,
+    write_header: bool = False
+):
+    """
+    Append data to CSV file incrementally.
+
+    Args:
+        data: List of dict records to append
+        output_file: Path to CSV file
+        write_header: If True, write header row (for first write)
+    """
+    if not data:
+        return
+
+    file_exists = Path(output_file).exists()
+    mode = 'a' if file_exists and not write_header else 'w'
+
+    with open(output_file, mode, newline='', encoding='utf-8') as f:
+        writer = csv.DictWriter(f, fieldnames=data[0].keys())
+        if mode == 'w' or write_header:
+            writer.writeheader()
+        writer.writerows(data)
+
+    print(f"   💾 Saved {len(data)} contacts to {output_file}")
+
+
+# =========================================================
 # Main execution
 # =========================================================
 
@@ -687,9 +740,11 @@ def main(
     """
     Process multiple companies from spreadsheet with retry logic.
 
+    Results are saved incrementally to the output file as each company is processed.
+
     Args:
         input_file: Path to CSV or Excel file with companies
-        output_file: Path for output CSV file
+        output_file: Path for output CSV file (saved incrementally)
         max_retries: Maximum retry attempts for transient failures (default: 3)
         retry_base_delay: Base delay in seconds for exponential backoff (default: 2.0)
     """
@@ -739,11 +794,30 @@ def main(
 
         companies.append((company_name, company_domain, website))
 
-    # Process all companies
-    all_results = []
+    # Initialize output CSV with headers
+    output_path = Path(output_file)
+    first_write = True
+    if output_path.exists():
+        print(f"⚠️  Output file {output_file} already exists - will append to it")
+        print(f"   To start fresh, delete the file first\n")
+        first_write = False
+    else:
+        print(f"📝 Initializing output file: {output_file}\n")
+        # Will write header on first append
+
+    # Track progress
+    total_contacts = 0
+    companies_processed = 0
+    companies_with_results = 0
 
     async def process_all():
-        for company_name, company_domain, website in companies:
+        nonlocal total_contacts, companies_processed, companies_with_results, first_write
+
+        for idx, (company_name, company_domain, website) in enumerate(companies, 1):
+            print(f"\n{'='*60}")
+            print(f"📍 PROGRESS: {idx}/{len(companies)} companies")
+            print(f"{'='*60}")
+
             safe_name = re.sub(r'[^\w\s-]', '', company_name).strip().replace(' ', '_')
             temp_csv = f"temp_{safe_name}_contacts.csv"
 
@@ -757,12 +831,16 @@ def main(
                 retry_base_delay=retry_base_delay
             )
 
+            companies_processed += 1
+
             if result_df is not None and len(result_df) > 0:
+                # Collect results for this company
+                company_contacts = []
                 for _, contact_row in result_df.iterrows():
                     title = contact_row.get("title", "")
 
                     if is_senior_enough(title):
-                        all_results.append({
+                        company_contacts.append({
                             "Company Name": company_name,
                             "First Name": contact_row.get("first_name", ""),
                             "Last Name": contact_row.get("last_name", ""),
@@ -770,22 +848,39 @@ def main(
                             "Email Guess": contact_row.get("email_guess", "")
                         })
 
+                # Save incrementally to main output file
+                if company_contacts:
+                    # Write header on first write, then append
+                    append_to_csv(company_contacts, output_file, write_header=first_write)
+                    if first_write:
+                        first_write = False
+                    total_contacts += len(company_contacts)
+                    companies_with_results += 1
+
+                    print(f"   ✅ {len(company_contacts)} contacts saved to {output_file}")
+                    print(f"   📊 Total so far: {total_contacts} contacts from {companies_with_results}/{companies_processed} companies")
+                else:
+                    print(f"   ⚠️  No senior contacts found for {company_name}")
+
                 # Clean up temp file
                 if Path(temp_csv).exists():
                     Path(temp_csv).unlink()
+            else:
+                print(f"   ⚠️  No results for {company_name}")
 
     # Run async processing
     asyncio.run(process_all())
 
-    # Export final results
-    if all_results:
-        results_df = pd.DataFrame(all_results)
-        results_df.to_csv(output_file, index=False, encoding='utf-8')
-        print(f"\n{'='*60}")
-        print(f"✅ DONE! {len(all_results)} contacts → {output_file}")
-        print(f"{'='*60}")
-    else:
-        print("\n⚠️  No results")
+    # Final summary
+    print(f"\n{'='*60}")
+    print(f"✅ COMPLETE!")
+    print(f"{'='*60}")
+    print(f"📊 Final Results:")
+    print(f"   • Companies processed: {companies_processed}/{len(companies)}")
+    print(f"   • Companies with results: {companies_with_results}")
+    print(f"   • Total contacts: {total_contacts}")
+    print(f"   • Output file: {output_file}")
+    print(f"{'='*60}\n")
 
 
 # =========================================================

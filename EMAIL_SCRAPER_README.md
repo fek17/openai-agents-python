@@ -58,7 +58,23 @@ The parallel version uses strongly-typed structured outputs:
 - Guaranteed consistency and correctness
 - Better debugging with clear data validation
 
-### 6. **More Accurate Results**
+### 6. **Agent Autonomy**
+
+Agents have flexible search strategies:
+- Suggested search approaches rather than rigid instructions
+- Full autonomy to choose search order and modify terms
+- Can make creative searches based on what they find
+- Adapt strategy dynamically during execution
+
+### 7. **Incremental Progress Saving**
+
+Results are saved as they're found:
+- CSV file is written after each company is processed
+- No data loss if script crashes or is interrupted
+- Real-time progress tracking shows contacts found so far
+- Can resume by re-running (automatically appends to existing file)
+
+### 8. **More Accurate Results**
 
 Because each agent is specialized:
 - Email format searches are more targeted
@@ -148,6 +164,50 @@ result_df, csv_path = process_company(
     temp_file_prefix="temp",
     max_turns=30
 )
+```
+
+## How It Works
+
+### Incremental Saving
+
+The scraper saves results **as each company is processed**, not at the end:
+
+```
+📍 PROGRESS: 1/10 companies
+🔍 PROCESSING: Acme Corp
+✅ Found 2 email format(s)
+✅ Found 8 executive(s)
+✅ Generated 16 valid emails
+   💾 Saved 16 contacts to output.csv
+   📊 Total so far: 16 contacts from 1/1 companies
+
+📍 PROGRESS: 2/10 companies
+🔍 PROCESSING: TechCo
+...
+```
+
+**Benefits:**
+- If the script crashes on company 5 of 10, you still have results from companies 1-4
+- You can monitor the output file in real-time as it grows
+- Can stop and resume anytime
+
+### Resuming Interrupted Runs
+
+If you need to resume a run:
+
+```python
+# The script will automatically append to existing file
+main("companies.csv", "output.csv")
+
+# Output:
+# ⚠️  Output file output.csv already exists - will append to it
+#    To start fresh, delete the file first
+```
+
+To start fresh, delete the output file before running:
+```bash
+rm output.csv
+python multi_agent_email_scraper_parallel.py
 ```
 
 ## Configuration
@@ -356,6 +416,10 @@ For timeout errors:
 | **Error Handling** | Basic error catching | Basic error catching | Smart retry on transient failures |
 | **Output Type** | Free text (regex parsing) | Free text (regex parsing) | Structured TypedDict (validated) |
 | **Data Validation** | Prone to parsing errors | Prone to parsing errors | Built-in validation & type checking |
+| **Search Strategy** | Rigid search instructions | Rigid search instructions | Flexible, agent has autonomy |
+| **Progress Tracking** | None until complete | None until complete | Real-time with incremental saving |
+| **Data Loss Risk** | Loses all if crashes | Loses all if crashes | Saves after each company |
+| **Resume Capability** | Must restart from beginning | Must restart from beginning | Can resume where left off |
 
 ## Future Enhancements
 

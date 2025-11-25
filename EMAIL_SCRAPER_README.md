@@ -375,6 +375,40 @@ If you see:
    - `⚠️ Skipping malformed email: ...` messages
 3. The new version validates patterns include the full `@domain.com`
 
+### Emails with unreplaced placeholders in output
+
+If your CSV contains emails like:
+```
+{first}.{last}@company.com
+j.{last}@company.com
+{first}j@company.com
+```
+
+**This was fixed with strict pattern validation!**
+
+**What was happening:**
+- Agent was returning patterns with invalid placeholders or mixed literals
+- Pattern validation wasn't strict enough
+
+**The fix includes:**
+1. **Pattern normalization**: Automatically fixes spaces, capitalization, common typos
+2. **Strict validation**: Only allows `{first}`, `{last}`, `{f}`, `{l}` placeholders
+3. **Clear agent instructions**: Examples of correct and incorrect patterns
+4. **Better error messages**: Shows exactly why a pattern was rejected
+
+**Debug output now shows:**
+```
+   Raw patterns from agent: ['{first}.{last}@company.com', 'j.{last}@company.com']
+   ⚠️  Invalid placeholder in pattern: j in j.{last}@company.com
+   ⚠️  Rejected invalid pattern: j.{last}@company.com
+   Validated patterns: ['{first}.{last}@company.com']
+```
+
+**If you still see issues:**
+- Check the console output for rejected patterns
+- The agent may be finding unusual formats - check the 'notes' field
+- Consider adjusting agent instructions if your company uses non-standard formats
+
 ### Rate Limit Errors (429)
 
 If you see rate limit errors:

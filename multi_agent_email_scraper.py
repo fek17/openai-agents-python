@@ -369,10 +369,15 @@ executive_search_agent = Agent(
         "- last_name: Last name only\n"
         "- title: Their exact job title\n\n"
 
-        "Aim to find 5-15 senior executives per company.\n"
+        "IMPORTANT:\n"
+        "- ABSOLUTELY NO DUPLICATES: Each executive should appear ONLY ONCE in the list\n"
+        "- MAXIMUM 15 executives: Stop at 15 executives, do not exceed this limit\n"
+        "- Aim to find 5-15 UNIQUE senior executives per company\n"
+        "- Before adding an executive to the list, verify they are not already included\n"
     ),
     tools=[WebSearchTool()],
     model="gpt-4o-mini",
+    max_tokens=4000,  # Prevent runaway generation
 )
 
 

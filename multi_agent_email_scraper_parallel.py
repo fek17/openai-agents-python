@@ -423,13 +423,17 @@ executive_search_agent = Agent(
         "- Split full names into first_name and last_name (ignore middle names/initials)\n"
         "- Use the company_name from the prompt for each executive\n"
         "- Only include genuinely senior roles (not mid-level managers)\n"
-        "- Aim to find 5-15 senior executives per company\n"
-        "- Set count to the total number of executives found\n"
+        "- ABSOLUTELY NO DUPLICATES: Each executive should appear ONLY ONCE in the list\n"
+        "- MAXIMUM 15 executives: Stop at 15 executives, do not exceed this limit\n"
+        "- Aim to find 5-15 UNIQUE senior executives per company\n"
+        "- Set count to the total number of UNIQUE executives found\n"
         "- Use the executive's full title as listed\n"
+        "- Before adding an executive to the list, verify they are not already included\n"
     ),
     tools=[WebSearchTool()],
     model="gpt-4o-mini",
     output_type=ExecutiveList,
+    max_tokens=4000,  # Prevent runaway generation
 )
 
 
@@ -553,15 +557,36 @@ def extract_email_formats(result) -> List[str]:
 
 
 def extract_executives(result) -> List[Person]:
-    """Extract executive list from structured agent output."""
+    """Extract executive list from structured agent output with deduplication."""
     try:
         # Agent returns ExecutiveList TypedDict
         if hasattr(result, 'final_output'):
             output = result.final_output
             if isinstance(output, dict) and 'executives' in output:
                 executives = output['executives']
-                print(f"   Executives found: {len(executives)}")
-                return executives if executives else []
+                print(f"   Raw executives found: {len(executives)}")
+
+                # Deduplicate executives by name (first + last)
+                seen_names = set()
+                unique_executives = []
+                duplicates_removed = 0
+
+                for exec_data in executives:
+                    first = exec_data.get('first_name', '').strip().lower()
+                    last = exec_data.get('last_name', '').strip().lower()
+                    name_key = f"{first}_{last}"
+
+                    if name_key and name_key not in seen_names:
+                        seen_names.add(name_key)
+                        unique_executives.append(exec_data)
+                    else:
+                        duplicates_removed += 1
+
+                if duplicates_removed > 0:
+                    print(f"   ⚠️  Removed {duplicates_removed} duplicate executive(s)")
+
+                print(f"   Unique executives: {len(unique_executives)}")
+                return unique_executives if unique_executives else []
         return []
     except Exception as e:
         print(f"⚠️  Error extracting executives: {e}")

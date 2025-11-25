@@ -18,7 +18,7 @@ from typing import List, TypedDict
 
 import pandas as pd
 
-from agents import Agent, Runner, WebSearchTool, function_tool
+from agents import Agent, Runner, WebSearchTool, function_tool, ModelSettings
 from agents.exceptions import MaxTurnsExceeded
 
 
@@ -377,7 +377,7 @@ executive_search_agent = Agent(
     ),
     tools=[WebSearchTool()],
     model="gpt-4o-mini",
-    max_tokens=4000,  # Prevent runaway generation
+    model_settings=ModelSettings(max_tokens=4000),  # Prevent runaway generation
 )
 
 

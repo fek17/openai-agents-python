@@ -17,7 +17,7 @@ import random
 
 import pandas as pd
 
-from agents import Agent, Runner, WebSearchTool, function_tool, trace
+from agents import Agent, Runner, WebSearchTool, function_tool, trace, ModelSettings
 from agents.exceptions import MaxTurnsExceeded
 
 
@@ -433,7 +433,7 @@ executive_search_agent = Agent(
     tools=[WebSearchTool()],
     model="gpt-4o-mini",
     output_type=ExecutiveList,
-    max_tokens=4000,  # Prevent runaway generation
+    model_settings=ModelSettings(max_tokens=4000),  # Prevent runaway generation
 )
 
 

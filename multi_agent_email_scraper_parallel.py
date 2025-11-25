@@ -232,6 +232,14 @@ def generate_emails_sync(
         last_simple = get_simple_name(last_clean)
 
         for fmt in formats:
+            # Check format is valid before attempting replacement
+            if '{' not in fmt or '}' not in fmt:
+                print(f"   ⚠️  Skipping format without placeholders: {fmt}")
+                failed_count += 1
+                continue
+
+            # Perform replacements in specific order (longer placeholders first)
+            email = fmt
             replacements = [
                 ("{firstname}", first_simple.lower()),
                 ("{lastname}", last_simple.lower()),
@@ -241,13 +249,15 @@ def generate_emails_sync(
                 ("{l}", last_simple[0].lower() if last_simple else ""),
             ]
 
-            email = fmt
             for placeholder, value in replacements:
                 email = email.replace(placeholder, value)
 
-            # Skip if placeholders weren't replaced
-            if '{' in email or '}' in email:
-                print(f"   ⚠️  Skipping malformed email: {email} (unreplaced placeholders)")
+            # Check if all placeholders were replaced
+            remaining_placeholders = re.findall(r'\{[^}]*\}', email)
+            if remaining_placeholders:
+                print(f"   ⚠️  Skipping malformed email for {first} {last}: {email}")
+                print(f"       Unreplaced placeholders: {remaining_placeholders}")
+                print(f"       Original format: {fmt}")
                 failed_count += 1
                 continue
 
@@ -255,9 +265,12 @@ def generate_emails_sync(
             if '@' not in email:
                 email = f"{email}@{company_domain}"
 
+            # Remove any spaces (shouldn't happen, but just in case)
+            email = email.replace(' ', '')
+
             # Validate email format
             if not re.match(r'^[a-zA-Z0-9._-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$', email):
-                print(f"   ⚠️  Skipping invalid email: {email}")
+                print(f"   ⚠️  Skipping invalid email for {first} {last}: {email}")
                 failed_count += 1
                 continue
 
@@ -302,19 +315,40 @@ email_format_agent = Agent(
         "{\n"
         '  "patterns": [\n'
         '    "{first}.{last}@domain.com",\n'
-        '    "{first}{last}@domain.com"\n'
+        '    "{first}{last}@domain.com",\n'
+        '    "{f}.{last}@domain.com"\n'
         "  ],\n"
         '  "notes": "Found pattern from LinkedIn profiles and company website"\n'
         "}\n\n"
 
-        "Format pattern placeholders:\n"
-        "- {first} = first name (lowercase, e.g., john)\n"
-        "- {last} = last name (lowercase, e.g., smith)\n"
-        "- {f} = first initial (e.g., j)\n"
-        "- {l} = last initial (e.g., s)\n\n"
+        "VALID placeholder tokens (use EXACTLY as shown, all lowercase):\n"
+        "- {first} = full first name\n"
+        "- {last} = full last name\n"
+        "- {f} = first initial only\n"
+        "- {l} = last initial only\n"
+        "- {firstname} = full first name (alternative)\n"
+        "- {lastname} = full last name (alternative)\n\n"
 
-        "IMPORTANT:\n"
-        "- Include the FULL email with @domain.com in each pattern\n"
+        "EXAMPLES of CORRECT patterns:\n"
+        "✅ {first}.{last}@company.com\n"
+        "✅ {f}{last}@company.com\n"
+        "✅ {first}_{last}@company.com\n"
+        "✅ {f}.{l}@company.com\n\n"
+
+        "EXAMPLES of INCORRECT patterns (DO NOT USE):\n"
+        "❌ {first} {last}@company.com (space between placeholders)\n"
+        "❌ {firstname}.{lastname}@company (missing .com)\n"
+        "❌ first.last@company.com (missing curly braces)\n"
+        "❌ {first}.{last} (missing @domain)\n"
+        "❌ j.{last}@company.com (literal letter instead of {f})\n"
+        "❌ {first}j@company.com (mixing literal and placeholder)\n\n"
+
+        "CRITICAL RULES:\n"
+        "- ONLY use the placeholder tokens listed above, with exact spelling\n"
+        "- NO spaces inside email patterns\n"
+        "- NO literal letters mixed with placeholders (use {f} not 'j')\n"
+        "- Include the FULL email with @domain.com in EVERY pattern\n"
+        "- Separators between placeholders can be: . (dot), - (dash), _ (underscore), or nothing\n"
         "- Return 1-3 most likely patterns based on evidence you find\n"
         "- If you cannot find patterns, return: {\"patterns\": [], \"notes\": \"No patterns found despite [searches performed]\"}\n"
         "- Always use the ACTUAL company domain provided in the prompt\n"
@@ -403,6 +437,91 @@ executive_search_agent = Agent(
 # Extract structured outputs from agents
 # =========================================================
 
+def normalize_pattern(pattern: str) -> str:
+    """
+    Normalize an email pattern by fixing common issues.
+
+    - Converts to lowercase
+    - Removes spaces
+    - Fixes common typos in placeholders
+    """
+    if not pattern:
+        return pattern
+
+    # Convert to lowercase
+    pattern = pattern.lower().strip()
+
+    # Remove all spaces
+    pattern = pattern.replace(' ', '')
+
+    # Fix common placeholder typos/variations
+    placeholder_fixes = {
+        '{fname}': '{first}',
+        '{firstname}': '{first}',
+        '{lname}': '{last}',
+        '{lastname}': '{last}',
+        '{fi}': '{f}',
+        '{firstinitial}': '{f}',
+        '{li}': '{l}',
+        '{lastinitial}': '{l}',
+        '{name}': '{first}',
+        '{surname}': '{last}',
+    }
+
+    for old, new in placeholder_fixes.items():
+        pattern = pattern.replace(old, new)
+
+    return pattern
+
+
+def validate_and_clean_email_pattern(pattern: str, domain: str) -> str | None:
+    """
+    Validate and clean an email pattern.
+
+    Returns cleaned pattern or None if invalid.
+    """
+    if not pattern:
+        return None
+
+    # Normalize first
+    pattern = normalize_pattern(pattern)
+
+    # Must contain @ and the domain
+    if '@' not in pattern:
+        print(f"   ⚠️  Pattern missing @ symbol: {pattern}")
+        return None
+
+    # Check for valid placeholders only
+    valid_placeholders = ['{first}', '{last}', '{f}', '{l}']
+
+    # Extract all placeholders from the pattern
+    found_placeholders = re.findall(r'\{[^}]*\}', pattern)
+
+    if not found_placeholders:
+        print(f"   ⚠️  No placeholders found in pattern: {pattern}")
+        return None
+
+    # Check if all placeholders are valid
+    for placeholder in found_placeholders:
+        if placeholder not in valid_placeholders:
+            print(f"   ⚠️  Invalid placeholder in pattern: {placeholder} in {pattern}")
+            return None
+
+    # Pattern should only have: alphanumeric, dots, dashes, underscores, @, and valid placeholders
+    # Remove placeholders temporarily to validate the rest
+    temp_pattern = pattern
+    for placeholder in valid_placeholders:
+        temp_pattern = temp_pattern.replace(placeholder, 'X')
+
+    # Check if remaining characters are valid (letters, numbers, @, ., -, _)
+    if not re.match(r'^[a-zA-Z0-9@.\-_]+$', temp_pattern):
+        print(f"   ⚠️  Invalid characters in pattern: {pattern}")
+        print(f"      After removing placeholders: {temp_pattern}")
+        return None
+
+    return pattern
+
+
 def extract_email_formats(result) -> List[str]:
     """Extract email format patterns from structured agent output."""
     try:
@@ -410,9 +529,23 @@ def extract_email_formats(result) -> List[str]:
         if hasattr(result, 'final_output'):
             output = result.final_output
             if isinstance(output, dict) and 'patterns' in output:
-                patterns = output['patterns']
-                print(f"   Patterns found: {patterns}")
-                return patterns if patterns else []
+                raw_patterns = output['patterns']
+                print(f"   Raw patterns from agent: {raw_patterns}")
+
+                # Validate and clean each pattern
+                validated_patterns = []
+                for pattern in raw_patterns:
+                    # Get domain from pattern
+                    if '@' in pattern:
+                        domain = pattern.split('@')[-1]
+                        cleaned = validate_and_clean_email_pattern(pattern, domain)
+                        if cleaned:
+                            validated_patterns.append(cleaned)
+                        else:
+                            print(f"   ⚠️  Rejected invalid pattern: {pattern}")
+
+                print(f"   Validated patterns: {validated_patterns}")
+                return validated_patterns
         return []
     except Exception as e:
         print(f"⚠️  Error extracting email formats: {e}")
